@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import {
   adminGetPlaylists,
   adminGetPlaylist,
@@ -8,9 +8,19 @@ import {
   adminGetLock,
   adminGetSpeakerPin,
   adminSetSpeakerPin,
+  speakerSlideThumbUrl,
 } from "../api";
 import { useI18n } from "../i18n";
 import LanguageToggle from "./LanguageToggle";
+import Logo from "./Logo";
+import {
+  AlertIcon,
+  CheckIcon,
+  ChevronRightIcon,
+  LogoutIcon,
+  PlaylistIcon,
+  SlidesIcon,
+} from "./Icons";
 
 interface Props {
   pin: string;
@@ -30,22 +40,53 @@ interface LockedInfo {
   slideCount: number;
 }
 
-const btnSmall =
-  "rounded-app border border-fg-muted bg-transparent px-3.5 py-1.5 text-[13px] text-fg-muted";
-const btnDanger =
-  "whitespace-nowrap rounded-app bg-accent px-3.5 py-1.5 text-[13px] text-white";
-const btnLock =
-  "whitespace-nowrap rounded-app border border-success bg-transparent px-3 py-1 text-xs text-success disabled:bg-success disabled:text-black disabled:opacity-70";
+function Section({
+  title,
+  footer,
+  className = "",
+  children,
+}: {
+  title: string;
+  footer?: ReactNode;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className={className}>
+      <h2 className="mb-2 px-4 text-[13px] font-semibold text-muted">{title}</h2>
+      <div className="overflow-hidden rounded-[18px] border border-line bg-surface">
+        {children}
+      </div>
+      {footer && <p className="mt-2 px-4 text-[13px] leading-snug text-muted">{footer}</p>}
+    </section>
+  );
+}
+
+function StatusDot({ state }: { state: boolean | null }) {
+  const color = state === null ? "bg-faint" : state ? "bg-success" : "bg-danger";
+  return (
+    <span className="relative inline-flex h-2 w-2 shrink-0">
+      {state && (
+        <span className="absolute inset-0 animate-ping rounded-full bg-success opacity-50 [animation-duration:2.4s]" />
+      )}
+      <span className={`relative h-2 w-2 rounded-full ${color}`} />
+    </span>
+  );
+}
 
 export default function AdminPanel({ pin, onLogout }: Props) {
   const { t, plural } = useI18n();
   const [playlists, setPlaylists] = useState<PlaylistItem[]>([]);
   const [expandedPlaylist, setExpandedPlaylist] = useState<string | null>(null);
   const [playlistItems, setPlaylistItems] = useState<PlaylistItem[]>([]);
+  const [itemsLoading, setItemsLoading] = useState(false);
   const [locked, setLocked] = useState<LockedInfo | null>(null);
+  const [lockingUuid, setLockingUuid] = useState<string | null>(null);
+  const [thumbFailed, setThumbFailed] = useState(false);
   const [speakerPin, setSpeakerPinState] = useState<string | null>(null);
   const [speakerPinDraft, setSpeakerPinDraft] = useState("");
   const [speakerPinSaving, setSpeakerPinSaving] = useState(false);
+  const [speakerPinSaved, setSpeakerPinSaved] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   // null = unknown (haven't checked yet), avoids banner flash on mount
@@ -130,6 +171,10 @@ export default function AdminPanel({ pin, onLogout }: Props) {
     };
   }, []);
 
+  useEffect(() => {
+    setThumbFailed(false);
+  }, [locked?.uuid, speakerPin]);
+
   async function togglePlaylist(id: string) {
     if (expandedPlaylist === id) {
       setExpandedPlaylist(null);
@@ -137,16 +182,21 @@ export default function AdminPanel({ pin, onLogout }: Props) {
       return;
     }
     setExpandedPlaylist(id);
+    setPlaylistItems([]);
+    setItemsLoading(true);
     try {
       const data = await adminGetPlaylist(pin, id);
       setPlaylistItems(data?.items || []);
     } catch {
       setPlaylistItems([]);
+    } finally {
+      setItemsLoading(false);
     }
   }
 
   async function handleLock(uuid: string, name: string) {
     setLoading(true);
+    setLockingUuid(uuid);
     try {
       const data = await adminGetPresentation(pin, uuid);
       const pres = data?.presentation;
@@ -163,6 +213,7 @@ export default function AdminPanel({ pin, onLogout }: Props) {
       setError(t("failedToLock"));
     } finally {
       setLoading(false);
+      setLockingUuid(null);
     }
   }
 
@@ -175,12 +226,18 @@ export default function AdminPanel({ pin, onLogout }: Props) {
     }
   }
 
+  function flashSaved() {
+    setSpeakerPinSaved(true);
+    window.setTimeout(() => setSpeakerPinSaved(false), 1600);
+  }
+
   async function handleSaveSpeakerPin() {
     const next = speakerPinDraft.trim();
     setSpeakerPinSaving(true);
     try {
       await adminSetSpeakerPin(pin, next.length ? next : null);
       setSpeakerPinState(next.length ? next : null);
+      flashSaved();
     } finally {
       setSpeakerPinSaving(false);
     }
@@ -197,138 +254,264 @@ export default function AdminPanel({ pin, onLogout }: Props) {
     }
   }
 
+  const statusText =
+    ppConnected === null
+      ? t("checkingConnection")
+      : ppConnected
+        ? t("connected")
+        : t("ppNotConnected");
+
   return (
-    <div className="mx-auto max-w-[600px] p-4">
-      <header className="mb-4 flex items-center justify-between">
-        <h1 className="text-[22px]">{t("admin")}</h1>
-        <div className="flex items-center gap-2">
+    <div className="min-h-dvh">
+      <header className="sticky top-0 z-20 border-b border-line bg-glass pt-[env(safe-area-inset-top)] backdrop-blur-xl backdrop-saturate-150">
+        <div className="mx-auto flex h-[60px] max-w-[1100px] items-center gap-3 px-4">
+          <Logo className="h-9 w-9 shrink-0 rounded-[10px]" />
+          <div className="min-w-0 flex-1">
+            <h1 className="text-[17px] leading-tight font-bold">{t("admin")}</h1>
+            <p className="flex items-center gap-1.5 truncate text-[13px] text-muted">
+              <StatusDot state={ppConnected} />
+              <span className="truncate">{statusText}</span>
+            </p>
+          </div>
           <LanguageToggle />
-          <button className={btnSmall} onClick={onLogout}>
-            {t("logout")}
+          <button
+            type="button"
+            onClick={onLogout}
+            aria-label={t("logout")}
+            title={t("logout")}
+            className="press grid h-9 w-9 shrink-0 place-items-center rounded-full bg-raised text-fg"
+          >
+            <LogoutIcon className="h-[18px] w-[18px]" />
           </button>
         </div>
       </header>
 
-      {ppConnected === false && (
-        <div
-          className="mb-4 flex items-start gap-3 rounded-app border border-accent/40 bg-accent/10 p-4"
-          role="alert"
-        >
-          <svg
-            className="mt-0.5 h-5 w-5 flex-shrink-0 text-accent"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            <path d="M12 2 L1 21 H23 Z M12 9 V14 M12 17 V18" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <div className="min-w-0">
-            <p className="font-semibold text-accent">{t("ppNotConnected")}</p>
-            <p className="mt-1 text-sm text-fg-muted">{t("ppNotConnectedHelp")}</p>
-          </div>
-        </div>
-      )}
-
-      <div className="mb-5 rounded-app bg-surface p-3.5">
-        <h2 className="mb-1 text-base font-semibold">{t("speakerPinSection")}</h2>
-        <p className="mb-3 text-xs text-fg-muted">{t("speakerPinHelp")}</p>
-        <p className="mb-3 text-sm">
-          {speakerPin ? t("speakerPinIsSet") : t("speakerPinNotSet")}
-        </p>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <input
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            placeholder={t("speakerPinPlaceholder")}
-            value={speakerPinDraft}
-            onChange={(e) => setSpeakerPinDraft(e.target.value)}
-            className="flex-1 rounded-app border border-white/10 bg-card p-2.5 text-sm text-fg outline-none focus:border-accent"
-          />
-          <button
-            onClick={handleSaveSpeakerPin}
-            disabled={speakerPinSaving || speakerPinDraft.trim() === (speakerPin ?? "")}
-            className="rounded-app bg-accent px-3.5 py-2 text-sm font-semibold text-white disabled:opacity-50"
-          >
-            {t("save")}
-          </button>
-          <button
-            onClick={handleClearSpeakerPin}
-            disabled={speakerPinSaving || !speakerPin}
-            className={btnSmall}
-          >
-            {t("clear")}
-          </button>
-        </div>
-      </div>
-
-      <div className="mb-5 rounded-app bg-surface p-3.5">
-        {locked ? (
-          <div className="flex items-center justify-between gap-3">
-            <span>
-              {t("lockedLabel")}: <strong>{locked.name}</strong> ({locked.slideCount}{" "}
-              {plural("slides", locked.slideCount)})
-            </span>
-            <button className={btnDanger} onClick={handleUnlock}>
-              {t("unlock")}
-            </button>
-          </div>
-        ) : (
-          <p className="text-sm text-fg-muted">{t("noPresentationLocked")}</p>
-        )}
-      </div>
-
-      {error && <p className="mt-2 text-sm text-accent">{error}</p>}
-
-      <h2 className="mb-3 text-base uppercase tracking-wider text-fg-muted">
-        {t("playlists")}
-      </h2>
-      {loading && !playlists.length && (
-        <p className="text-sm text-fg-muted">{t("loading")}</p>
-      )}
-
-      <ul className="list-none">
-        {playlists.map((pl) => (
-          <li key={pl.id.uuid}>
-            <button
-              onClick={() => togglePlaylist(pl.id.uuid)}
-              className="block w-full border-0 border-b border-white/5 bg-transparent p-3 text-left text-[15px] text-fg"
+      <main className="mx-auto max-w-[1100px] px-4 pt-5 pb-[calc(32px+env(safe-area-inset-bottom))] lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:grid-rows-[auto_1fr] lg:gap-x-8">
+        {/* Left column on iPad / desktop: what the speaker sees */}
+        <div className="space-y-6 lg:col-start-1 lg:row-start-1">
+          {ppConnected === false && (
+            <div
+              className="flex items-start gap-3 rounded-[18px] border border-danger/30 bg-danger/10 p-4"
+              role="alert"
             >
-              {expandedPlaylist === pl.id.uuid ? "v" : ">"} {pl.id.name}
-            </button>
+              <AlertIcon className="mt-0.5 h-5 w-5 shrink-0 text-danger" />
+              <div className="min-w-0">
+                <p className="text-[15px] font-bold text-danger">{t("ppNotConnected")}</p>
+                <p className="mt-1 text-[14px] leading-snug text-muted">
+                  {t("ppNotConnectedHelp")}
+                </p>
+              </div>
+            </div>
+          )}
 
-            {expandedPlaylist === pl.id.uuid && (
-              <ul className="list-none pl-4">
-                {playlistItems.length === 0 && (
-                  <li className="text-sm text-fg-muted">{t("noItems")}</li>
-                )}
-                {playlistItems
-                  .filter((item) => item.type === "presentation")
-                  .map((item, i) => {
-                    const presUuid =
-                      item.presentation_info?.presentation_uuid ||
-                      item.id.uuid;
-                    return (
-                      <li
-                        key={presUuid || i}
-                        className="flex items-center justify-between border-b border-white/[0.04] px-3 py-2.5 text-sm"
-                      >
-                        <span>{item.id?.name || t("untitled")}</span>
-                        <button
-                          className={btnLock}
-                          onClick={() => handleLock(presUuid, item.id.name)}
-                          disabled={locked?.uuid === presUuid}
-                        >
-                          {locked?.uuid === presUuid ? t("lockedLabel") : t("lock")}
-                        </button>
-                      </li>
-                    );
-                  })}
-              </ul>
+          <Section title={t("speakerSees")}>
+            {locked ? (
+              <div className="flex items-center gap-3.5 p-3.5">
+                <span className="relative block aspect-video w-[104px] shrink-0 overflow-hidden rounded-[9px] bg-thumb shadow-[0_0_0_2px_var(--app-surface),0_0_0_4px_var(--app-accent)]">
+                  {!thumbFailed && (
+                    <img
+                      src={`${speakerSlideThumbUrl(0, 400, speakerPin)}&p=${encodeURIComponent(locked.uuid)}`}
+                      alt=""
+                      draggable={false}
+                      onError={() => setThumbFailed(true)}
+                      className="h-full w-full object-cover"
+                    />
+                  )}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[16px] font-bold">{locked.name}</p>
+                  <p className="text-[13px] text-muted">
+                    {locked.slideCount} {plural("slides", locked.slideCount)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleUnlock}
+                  className="press h-9 shrink-0 rounded-full bg-danger/12 px-3.5 text-[13px] font-bold whitespace-nowrap text-danger"
+                >
+                  {t("unlock")}
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 p-4 text-[15px] leading-snug text-muted">
+                <SlidesIcon className="h-6 w-6 shrink-0 text-faint" />
+                {t("noPresentationLocked")}
+              </div>
             )}
-          </li>
-        ))}
-      </ul>
+          </Section>
+
+          {error && (
+            <p role="alert" className="px-4 text-[14px] font-medium text-danger">
+              {error}
+            </p>
+          )}
+        </div>
+
+        {/* Right column on iPad / desktop: playlists */}
+        <Section
+          title={t("playlists")}
+          className="mt-6 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-0"
+        >
+          {loading && !playlists.length && (
+            <p className="p-4 text-[15px] text-muted">{t("loading")}</p>
+          )}
+          {!loading && !playlists.length && (
+            <p className="p-4 text-[15px] text-muted">{t("noItems")}</p>
+          )}
+          <ul className="divide-y divide-line">
+            {playlists.map((pl) => {
+              const expanded = expandedPlaylist === pl.id.uuid;
+              const presentations = playlistItems.filter((i) => i.type === "presentation");
+              return (
+                <li key={pl.id.uuid}>
+                  <button
+                    type="button"
+                    onClick={() => togglePlaylist(pl.id.uuid)}
+                    aria-expanded={expanded}
+                    className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors active:bg-raised"
+                  >
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-accent/12 text-accent-ink">
+                      <PlaylistIcon className="h-[18px] w-[18px]" />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[16px] font-semibold">
+                      {pl.id.name}
+                    </span>
+                    <ChevronRightIcon
+                      className={`h-4 w-4 shrink-0 text-faint transition-transform duration-200 ${
+                        expanded ? "rotate-90" : ""
+                      }`}
+                    />
+                  </button>
+
+                  {expanded && (
+                    <ul className="border-t border-line bg-bg/50 pb-1.5">
+                      {itemsLoading && (
+                        <li className="py-3 pr-4 pl-[60px] text-[14px] text-muted">
+                          {t("loading")}
+                        </li>
+                      )}
+                      {!itemsLoading && presentations.length === 0 && (
+                        <li className="py-3 pr-4 pl-[60px] text-[14px] text-muted">
+                          {t("noItems")}
+                        </li>
+                      )}
+                      {!itemsLoading &&
+                        presentations.length > 0 &&
+                        playlistItems.map((item, i) => {
+                          if (item.type === "header") {
+                            return (
+                              <li
+                                key={`h-${i}`}
+                                className="pt-3 pr-4 pb-1 pl-[60px] text-[12px] font-bold text-muted"
+                              >
+                                {item.id?.name}
+                              </li>
+                            );
+                          }
+                          if (item.type !== "presentation") return null;
+                          const presUuid =
+                            item.presentation_info?.presentation_uuid || item.id.uuid;
+                          const isLocked = locked?.uuid === presUuid;
+                          const isLocking = lockingUuid === presUuid;
+                          return (
+                            <li
+                              key={presUuid || i}
+                              className="flex items-center gap-3 py-2 pr-3 pl-[60px]"
+                            >
+                              <span
+                                className={`min-w-0 flex-1 truncate text-[15px] ${
+                                  isLocked ? "font-bold" : ""
+                                }`}
+                              >
+                                {item.id?.name || t("untitled")}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleLock(presUuid, item.id.name)}
+                                disabled={isLocked || isLocking}
+                                className={`press inline-flex h-8 shrink-0 items-center gap-1 rounded-full px-3.5 text-[13px] font-bold whitespace-nowrap ${
+                                  isLocked
+                                    ? "bg-accent-strong text-white"
+                                    : "border border-accent/45 text-accent-ink disabled:opacity-60"
+                                }`}
+                              >
+                                {isLocked && <CheckIcon className="h-3.5 w-3.5" />}
+                                {isLocked
+                                  ? t("lockedLabel")
+                                  : isLocking
+                                    ? t("loading")
+                                    : t("lock")}
+                              </button>
+                            </li>
+                          );
+                        })}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </Section>
+
+        <Section
+          title={t("speakerPinSection")}
+          footer={t("speakerPinHelp")}
+          className="mt-6 lg:col-start-1 lg:row-start-2"
+        >
+          <div className="p-4">
+            <p className="flex items-center gap-2 text-[15px] font-medium">
+              <span
+                className={`h-2 w-2 shrink-0 rounded-full ${
+                  speakerPin ? "bg-success" : "bg-faint"
+                }`}
+              />
+              {speakerPin ? t("speakerPinIsSet") : t("speakerPinNotSet")}
+            </p>
+            <div className="mt-3 flex gap-2">
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoComplete="off"
+                placeholder={t("speakerPinPlaceholder")}
+                value={speakerPinDraft}
+                onChange={(e) => setSpeakerPinDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (
+                    e.key === "Enter" &&
+                    !speakerPinSaving &&
+                    speakerPinDraft.trim() !== (speakerPin ?? "")
+                  ) {
+                    handleSaveSpeakerPin();
+                  }
+                }}
+                className="h-11 w-full min-w-0 flex-1 rounded-xl bg-raised px-3.5 text-[17px] tracking-[0.2em] tabular-nums text-fg outline-none placeholder:tracking-normal placeholder:text-faint focus:ring-2 focus:ring-accent"
+              />
+              <button
+                type="button"
+                onClick={handleSaveSpeakerPin}
+                disabled={speakerPinSaving || speakerPinDraft.trim() === (speakerPin ?? "")}
+                className={`press inline-flex h-11 shrink-0 items-center gap-1 rounded-xl px-4 text-[15px] font-bold text-white ${
+                  speakerPinSaved
+                    ? "bg-success"
+                    : "bg-accent-strong disabled:bg-raised disabled:text-faint"
+                }`}
+              >
+                {speakerPinSaved && <CheckIcon className="h-4 w-4" />}
+                {speakerPinSaved ? t("saved") : t("save")}
+              </button>
+              <button
+                type="button"
+                onClick={handleClearSpeakerPin}
+                disabled={speakerPinSaving || !speakerPin}
+                className="press h-11 shrink-0 rounded-xl bg-raised px-4 text-[15px] font-semibold text-fg disabled:text-faint"
+              >
+                {t("clear")}
+              </button>
+            </div>
+          </div>
+        </Section>
+      </main>
     </div>
   );
 }
