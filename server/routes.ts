@@ -161,6 +161,40 @@ router.get("/api/speaker/presentation", requireSpeakerPin, (_req, res) => {
   res.json({ locked: true, ...locked });
 });
 
+// ProPresenter colors are { red, green, blue, alpha } floats (0–1). Returns a
+// CSS color, or null for missing/fully transparent ones.
+function toCssColor(c: any): string | null {
+  if (!c || typeof c.red !== "number") return null;
+  if (typeof c.alpha === "number" && c.alpha === 0) return null;
+  const ch = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 255);
+  return `rgb(${ch(c.red)} ${ch(c.green)} ${ch(c.blue)})`;
+}
+
+// Per-slide group name/color for the locked presentation, flattened in the
+// same order as slide indexes. Purely decorative for the speaker UI, which
+// falls back to plain numbers if this fails.
+router.get("/api/speaker/slides", requireSpeakerPin, async (_req, res) => {
+  const locked = getLockedPresentation();
+  if (!locked) {
+    res.status(404).json({ error: "No presentation locked" });
+    return;
+  }
+  try {
+    const data = await pp.getPresentation(locked.uuid);
+    const groups: any[] = data?.presentation?.groups || [];
+    const slides = groups.flatMap((g) =>
+      (g.slides || []).map((s: any) => ({
+        group: g.name || null,
+        color: toCssColor(g.color),
+        label: s.label || null,
+      }))
+    );
+    res.json({ slides });
+  } catch {
+    res.status(502).json({ error: "Cannot reach ProPresenter" });
+  }
+});
+
 router.get("/api/speaker/slide/:index/thumbnail", requireSpeakerPin, async (req, res) => {
   const locked = getLockedPresentation();
   if (!locked) {

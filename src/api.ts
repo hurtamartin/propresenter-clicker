@@ -139,6 +139,16 @@ export async function speakerGetPresentation(pin?: string | null) {
   );
 }
 
+// Group name/color per slide of the locked presentation:
+// { slides: { group: string | null; color: string | null; label: string | null }[] }
+export async function speakerGetSlides(pin?: string | null) {
+  return asJson(
+    await fetch(`${BASE}/api/speaker/slides`, {
+      headers: speakerHeaders(pin),
+    })
+  );
+}
+
 export function speakerSlideThumbUrl(
   index: number,
   quality = 400,

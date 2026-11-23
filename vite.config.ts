@@ -9,29 +9,28 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.svg"],
+      includeAssets: ["favicon.svg", "apple-touch-icon.png"],
       manifest: {
+        id: "/",
         name: "ProPresenter clicker",
         short_name: "PP clicker",
         description: "Web remote for ProPresenter slides",
-        theme_color: "#1a1a2e",
-        background_color: "#1a1a2e",
+        theme_color: "#ffffff",
+        background_color: "#ffffff",
         display: "standalone",
-        orientation: "portrait",
+        // iPads are used in landscape on stage; don't lock orientation.
+        orientation: "any",
         start_url: "/",
         icons: [
+          { src: "pwa-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "pwa-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
           {
-            src: "icon.svg",
-            sizes: "any",
-            type: "image/svg+xml",
-            purpose: "any",
-          },
-          {
-            src: "icon-maskable.svg",
-            sizes: "any",
-            type: "image/svg+xml",
+            src: "pwa-maskable-512.png",
+            sizes: "512x512",
+            type: "image/png",
             purpose: "maskable",
           },
+          { src: "icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
         ],
       },
       workbox: {

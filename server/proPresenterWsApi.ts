@@ -259,6 +259,15 @@ export async function getLibrary(_id: string) {
   };
 }
 
+// WS sends group colors as an "r g b a" string of 0–1 floats; translate to the
+// REST shape { red, green, blue, alpha }. Undefined when absent/unparseable.
+function parseWsColor(value: unknown) {
+  if (typeof value !== "string") return undefined;
+  const [red, green, blue, alpha = 1] = value.trim().split(/\s+/).map(Number);
+  if (![red, green, blue, alpha].every(Number.isFinite)) return undefined;
+  return { red, green, blue, alpha };
+}
+
 export async function getPresentation(uuid: string) {
   let raw = presentationCache.get(uuid);
   if (!raw) {
@@ -283,6 +292,7 @@ export async function getPresentation(uuid: string) {
   }
   const groups = ((raw && raw.presentationSlideGroups) || []).map((g: any) => ({
     name: g.groupName,
+    color: parseWsColor(g.groupColor),
     slides: (g.groupSlides || []).map((s: any, i: number) => ({
       uuid: `${uuid}#${s.slideIndex ?? i}`,
       label: s.slideLabel,

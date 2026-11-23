@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-const COLORS = ["#e94560", "#533483", "#00d672", "#f59e0b", "#3b82f6"];
+const COLORS = ["#3b82f6", "#10b981", "#8b5cf6", "#ec4899", "#334155"];
 
 type Particle = {
   el: HTMLDivElement;
@@ -150,7 +150,7 @@ export default function DvdBouncer() {
     <div
       ref={elRef}
       aria-hidden="true"
-      className="absolute top-0 left-0 -z-10 flex cursor-pointer items-center rounded-lg px-4 py-2 opacity-60 shadow-lg select-none will-change-transform"
+      className="absolute top-0 left-0 -z-10 flex cursor-pointer items-center rounded-full px-4 py-2 opacity-50 shadow-lg select-none will-change-transform"
     >
       <img
         src="/pp-logo.svg"
